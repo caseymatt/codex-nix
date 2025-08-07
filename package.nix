@@ -33,7 +33,7 @@ if supported then stdenvNoCC.mkDerivation {
       cd "$src"
     fi
     # Locate the codex binary within the asset (supports codex and codex-exec)
-    candidate=$(find . -maxdepth 3 -type f -perm -u+x 2>/dev/null | grep -E '/codex(-exec)?$' | head -n1 || true)
+    candidate=$(find . -maxdepth 3 -type f 2>/dev/null | grep -E '/codex(-exec)?$' | head -n1 || true)
     if [ -z "$candidate" ] && [ -f "./codex" ]; then
       candidate="./codex"
     fi
@@ -47,7 +47,12 @@ if supported then stdenvNoCC.mkDerivation {
     fi
 
     # Install the actual binary
-    install -Dm755 "$candidate" "$out/bin/codex-bin"
+    install -Dm755 "$candidate" "$out/bin/codex-bin" || {
+      # Fallback: copy then chmod if install -m fails due to perms
+      mkdir -p "$out/bin"
+      cp -f "$candidate" "$out/bin/codex-bin"
+      chmod 0755 "$out/bin/codex-bin"
+    }
 
     # Create wrapper to:
     # - Provide stable path for macOS permission persistence
