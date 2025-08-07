@@ -1,0 +1,110 @@
+name: Update Codex Version
+
+on:
+  schedule:
+    - cron: '0 3 * * *' # Daily at 03:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-and-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v26
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Fetch latest GitHub release metadata
+        id: latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          api_url="https://api.github.com/repos/openai/codex/releases/latest"
+          json=$(curl -fsSL -H "Authorization: token $GH_TOKEN" "$api_url")
+          echo "$json" > latest.json
+          version=$(jq -r .tag_name latest.json)
+          echo "Latest version: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build sources.json from assets
+        id: build_sources
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          version=${{ steps.latest.outputs.version }}
+          assets=$(jq -c '.assets[] | {name: .name, url: .browser_download_url}' latest.json)
+
+          map_asset() {
+            local os_arch="$1" # nix system key
+            local pattern="$2" # regex to match asset name
+            local line=$(echo "$assets" | jq -r --arg re "$pattern" 'select(.name|test($re)) | @base64' | head -n1 || true)
+            if [ -z "$line" ]; then
+              echo ""; return 0
+            fi
+            line=$(echo "$line" | base64 -d)
+            name=$(echo "$line" | jq -r .name)
+            url=$(echo "$line" | jq -r .url)
+            echo "Found $os_arch -> $name ($url)"
+            # Prefetch sha256 via nix (json output)
+            sha=$(nix store prefetch-file --json "$url" | jq -r .hash)
+            jq -n --arg url "$url" --arg sha256 "$sha" '{url:$url, sha256:$sha256}'
+          }
+
+          x86_64_darwin=$(map_asset x86_64-darwin 'darwin.*(x86_64|amd64)')
+          aarch64_darwin=$(map_asset aarch64-darwin 'darwin.*(arm64|aarch64)')
+          x86_64_linux=$(map_asset x86_64-linux 'linux.*(x86_64|amd64)')
+          aarch64_linux=$(map_asset aarch64-linux 'linux.*(arm64|aarch64)')
+
+          jq -n \
+            --arg version "$version" \
+            --argjson x86_64_darwin "${x86_64_darwin:-null}" \
+            --argjson aarch64_darwin "${aarch64_darwin:-null}" \
+            --argjson x86_64_linux "${x86_64_linux:-null}" \
+            --argjson aarch64_linux "${aarch64_linux:-null}" \
+            '{version:$version, assets:{"x86_64-darwin":$x86_64_darwin, "aarch64-darwin":$aarch64_darwin, "x86_64-linux":$x86_64_linux, "aarch64-linux":$aarch64_linux}}' \
+            > codex-nix/sources.json
+
+          echo "Wrote codex-nix/sources.json"
+          cat codex-nix/sources.json
+
+      - name: Commit changes
+        run: |
+          set -e
+          if git diff --quiet --exit-code; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b chore/update-codex-${{ steps.latest.outputs.version }}
+          git add codex-nix/sources.json
+          git commit -m "chore: update codex to ${{ steps.latest.outputs.version }}"
+          git push -u origin HEAD
+
+      - name: Create Pull Request
+        if: ${{ !cancelled() }}
+        uses: peter-evans/create-pull-request@v6
+        with:
+          title: "Update Codex to ${{ steps.latest.outputs.version }}"
+          body: |
+            Automated update to version ${{ steps.latest.outputs.version }}.
+
+            - Sources regenerated from GitHub releases
+            - Hashes computed via `nix store prefetch-file`
+          branch: "chore/update-codex-${{ steps.latest.outputs.version }}"
+          commit-message: "chore: update codex to ${{ steps.latest.outputs.version }}"
+
