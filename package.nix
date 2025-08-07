@@ -1,6 +1,5 @@
 { lib
 , stdenvNoCC
-, fetchzip
 , fetchurl
 , bash
 }:
@@ -19,9 +18,7 @@ if supported then stdenvNoCC.mkDerivation {
   pname = "codex";
   version = sources.version;
 
-  src = if (isArchive srcInfo.url)
-        then fetchzip { url = srcInfo.url; sha256 = srcInfo.sha256; }
-        else fetchurl { url = srcInfo.url; sha256 = srcInfo.sha256; };
+  src = fetchurl { url = srcInfo.url; sha256 = srcInfo.sha256; };
 
   dontConfigure = true;
   dontBuild = true;
@@ -29,9 +26,18 @@ if supported then stdenvNoCC.mkDerivation {
 
   installPhase = ''
     mkdir -p $out/bin
-    if [ -d "$src" ]; then
-      cd "$src"
-    fi
+    work="$PWD/extract"
+    mkdir -p "$work"
+    case "$src" in
+      *.tar.gz|*.tgz)
+        tar -xzf "$src" -C "$work" ;;
+      *.zip)
+        echo "Zip archives are not supported in this build script" >&2; exit 1 ;;
+      *)
+        # Maybe it's a raw binary; copy as-is
+        cp "$src" "$work/codex" || true ;;
+    esac
+    cd "$work"
     # Locate the codex binary within the asset (supports codex and codex-exec)
     candidate=$(find . -maxdepth 3 -type f 2>/dev/null | grep -E '/codex(-exec)?$' | head -n1 || true)
     if [ -z "$candidate" ] && [ -f "./codex" ]; then
