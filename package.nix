@@ -32,9 +32,15 @@ if supported then stdenv.mkDerivation {
   nativeBuildInputs = [ gnutar gzip findutils coreutils bash file ];
 
   installPhase = ''
+    set -euxo pipefail
     mkdir -p $out/bin
     work="$PWD/extract"
     mkdir -p "$work"
+    echo "tar at: $(command -v tar)"
+    tar --version || true
+    echo "src: $src"
+    ls -l "$src" || true
+    file "$src" || true
     case "$src" in
       *.tar.gz|*.tgz)
         tar -xzf "$src" -C "$work" ;;
