@@ -25,6 +25,7 @@ if supported then stdenv.mkDerivation {
 
   src = fetchurl { url = srcInfo.url; sha256 = srcInfo.sha256; };
 
+  dontUnpack = true;
   dontConfigure = true;
   dontBuild = true;
   preferLocalBuild = true;
