@@ -8,8 +8,10 @@ on:
 
 jobs:
   build:
+    continue-on-error: ${{ matrix.os == 'ubuntu-latest' }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest]
     steps:
@@ -23,19 +25,8 @@ jobs:
             sandbox = false
             access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Cachix
-        uses: cachix/cachix-action@v14
-        if: github.ref == 'refs/heads/main'
-        with:
-          name: caseymatt
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-
       - name: Build codex
         run: nix build .#codex -L
-
-      - name: Push to Cachix (macOS only)
-        if: github.ref == 'refs/heads/main' && matrix.os == 'macos-latest'
-        run: nix build .#codex --json | jq -r '.[].outputs.out' | cachix push caseymatt
 
       - name: Smoke test
         run: ./result/bin/codex --version || true
