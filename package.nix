@@ -1,7 +1,11 @@
 { lib
-, stdenvNoCC
+, stdenv
 , fetchurl
 , bash
+, gnutar
+, gzip
+, findutils
+, coreutils
 }:
 
 # Package OpenAI Codex CLI by consuming prebuilt GitHub release assets.
@@ -9,12 +13,12 @@
 
 let
   sources = builtins.fromJSON (builtins.readFile ./sources.json);
-  system = stdenvNoCC.hostPlatform.system;
+  system = stdenv.hostPlatform.system;
   srcInfo = sources.assets.${system} or null;
   isArchive = url: lib.any (s: lib.hasSuffix s url) [ ".zip" ".tar.gz" ".tgz" ".tar.xz" ];
   supported = srcInfo != null && srcInfo.url or "" != "" && srcInfo.sha256 or "" != "";
 in
-if supported then stdenvNoCC.mkDerivation {
+if supported then stdenv.mkDerivation {
   pname = "codex";
   version = sources.version;
 
@@ -23,6 +27,8 @@ if supported then stdenvNoCC.mkDerivation {
   dontConfigure = true;
   dontBuild = true;
   preferLocalBuild = true;
+
+  nativeBuildInputs = [ gnutar gzip findutils coreutils bash ];
 
   installPhase = ''
     mkdir -p $out/bin
@@ -41,7 +47,7 @@ if supported then stdenvNoCC.mkDerivation {
     echo "Listing extracted files (top 200):"
     find . -maxdepth 3 -type f | head -n 200 | sed 's/^/  /'
     # Locate the codex binary within the asset (supports codex and codex-exec)
-    candidate=$(find . -maxdepth 3 -type f 2>/dev/null | grep -E '/codex(-exec)?$' | head -n1 || true)
+    candidate=$(find . -maxdepth 4 -type f 2>/dev/null | grep -E '/(bin/)?codex(-exec)?$' | head -n1 || true)
     if [ -z "$candidate" ] && [ -f "./codex" ]; then
       candidate="./codex"
     fi
@@ -50,7 +56,7 @@ if supported then stdenvNoCC.mkDerivation {
     fi
     if [ -z "$candidate" ]; then
       echo "Could not locate executable 'codex' in release asset" >&2
-      find . -maxdepth 3 -type f -perm -u+x >&2 || true
+      find . -maxdepth 4 -type f -perm -u+x >&2 || true
       exit 1
     fi
 
@@ -100,7 +106,7 @@ EOF
     mainProgram = "codex";
     maintainers = [];
   };
-} else stdenvNoCC.mkDerivation {
+} else stdenv.mkDerivation {
   pname = "codex";
   version = sources.version;
   dontUnpack = true;
