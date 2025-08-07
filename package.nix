@@ -13,12 +13,9 @@ let
   system = stdenvNoCC.hostPlatform.system;
   srcInfo = sources.assets.${system} or null;
   isArchive = url: lib.any (s: lib.hasSuffix s url) [ ".zip" ".tar.gz" ".tgz" ".tar.xz" ];
+  supported = srcInfo != null && srcInfo.url or "" != "" && srcInfo.sha256 or "" != "";
 in
-assert (srcInfo != null) || (throw ''
-  No release asset found for system: ${system}
-  Please run the update workflow to populate sources.json.
-'');
-stdenvNoCC.mkDerivation {
+if supported then stdenvNoCC.mkDerivation {
   pname = "codex";
   version = sources.version;
 
@@ -35,10 +32,13 @@ stdenvNoCC.mkDerivation {
     if [ -d "$src" ]; then
       cd "$src"
     fi
-    # Locate the codex binary within the asset
-    candidate=$(find . -type f -maxdepth 3 -name codex -perm -u+x 2>/dev/null | head -n1)
+    # Locate the codex binary within the asset (supports codex and codex-exec)
+    candidate=$(find . -maxdepth 3 -type f -perm -u+x 2>/dev/null | grep -E '/codex(-exec)?$' | head -n1 || true)
     if [ -z "$candidate" ] && [ -f "./codex" ]; then
       candidate="./codex"
+    fi
+    if [ -z "$candidate" ] && [ -f "./codex-exec" ]; then
+      candidate="./codex-exec"
     fi
     if [ -z "$candidate" ]; then
       echo "Could not locate executable 'codex' in release asset" >&2
@@ -86,5 +86,21 @@ EOF
     platforms = builtins.attrNames sources.assets;
     mainProgram = "codex";
     maintainers = [];
+  };
+} else stdenvNoCC.mkDerivation {
+  pname = "codex";
+  version = sources.version;
+  dontUnpack = true;
+  installPhase = ''
+    echo "Codex binary not available for ${system} or sources.json not populated yet." >&2
+    echo "Please run the updater workflow and ensure assets exist for this platform." >&2
+    exit 1
+  '';
+  meta = with lib; {
+    description = "OpenAI Codex CLI packaged for Nix (unavailable for this platform)";
+    homepage = "https://github.com/openai/codex";
+    license = licenses.mit;
+    platforms = [ system ];
+    mainProgram = "codex";
   };
 }
