@@ -6,6 +6,7 @@
 , gzip
 , findutils
 , coreutils
+, file
 }:
 
 # Package OpenAI Codex CLI by consuming prebuilt GitHub release assets.
@@ -28,7 +29,7 @@ if supported then stdenv.mkDerivation {
   dontBuild = true;
   preferLocalBuild = true;
 
-  nativeBuildInputs = [ gnutar gzip findutils coreutils bash ];
+  nativeBuildInputs = [ gnutar gzip findutils coreutils bash file ];
 
   installPhase = ''
     mkdir -p $out/bin
@@ -45,7 +46,7 @@ if supported then stdenv.mkDerivation {
     esac
     cd "$work"
     echo "Listing extracted files (top 200):"
-    find . -maxdepth 3 -type f | head -n 200 | sed 's/^/  /'
+    find . -maxdepth 4 -type f | head -n 200 | sed 's/^/  /'
     # Locate the codex binary within the asset (supports codex and codex-exec)
     candidate=$(find . -maxdepth 4 -type f 2>/dev/null | grep -E '/(bin/)?codex(-exec)?$' | head -n1 || true)
     if [ -z "$candidate" ] && [ -f "./codex" ]; then
@@ -53,6 +54,14 @@ if supported then stdenv.mkDerivation {
     fi
     if [ -z "$candidate" ] && [ -f "./codex-exec" ]; then
       candidate="./codex-exec"
+    fi
+    if [ -z "$candidate" ]; then
+      # Try any file named starting with codex
+      candidate=$(find . -maxdepth 4 -type f -name 'codex*' | head -n1 || true)
+    fi
+    if [ -z "$candidate" ]; then
+      # As a last resort, pick the first Mach-O or ELF file
+      candidate=$(find . -maxdepth 4 -type f -size +1M -print0 | xargs -0 file | grep -E 'Mach-O|ELF' | cut -d: -f1 | head -n1 || true)
     fi
     if [ -z "$candidate" ]; then
       echo "Could not locate executable 'codex' in release asset" >&2
