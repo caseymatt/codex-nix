@@ -58,8 +58,7 @@ jobs:
         nix build .#codex -L --show-trace
 
     - name: Push to Cachix
-      if: github.ref == 'refs/heads/main' && matrix.os == 'macos-latest'
-        && steps.sources.outputs.ok == 'true'
+      if: github.ref == 'refs/heads/main' && matrix.os == 'macos-latest' && steps.sources.outputs.ok == 'true'
       run: |
         nix build .#codex --json | jq -r '.[].outputs.out' | cachix push caseymatt
 
