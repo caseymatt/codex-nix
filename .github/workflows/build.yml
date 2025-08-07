@@ -1,68 +1,41 @@
-name: "Build and Cache"
+name: Build and Cache
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
-  workflow_run:
-    workflows: ["Update Codex Version"]
-    types:
-      - completed
-    branches: [ main ]
 
 jobs:
   build:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest]
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - uses: cachix/install-nix-action@v26
-      with:
-        nix_path: nixpkgs=channel:nixos-unstable
-        extra_nix_config: |
-          experimental-features = nix-command flakes
-          sandbox = false
-          access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+      - uses: cachix/install-nix-action@v26
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            sandbox = false
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
 
-    - name: Check sources.json is populated
-      id: sources
-      run: |
-        set -e
-        if [ ! -f codex-nix/sources.json ]; then
-          echo "ok=false" >> $GITHUB_OUTPUT
-          exit 0
-        fi
-        jq -e '(.version != "0.0.0") and ([.assets[]? | select(. != null and .url != "" and .sha256 != "")] | length) > 0' codex-nix/sources.json >/dev/null \
-          && echo "ok=true" >> $GITHUB_OUTPUT || echo "ok=false" >> $GITHUB_OUTPUT
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v14
+        if: github.ref == 'refs/heads/main'
+        with:
+          name: caseymatt
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
-    - name: Setup Cachix
-      uses: cachix/cachix-action@v14
-      if: github.ref == 'refs/heads/main'
-      with:
-        name: caseymatt
-        authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+      - name: Build codex
+        run: nix build .#codex -L
 
-    - name: Build codex
-      if: steps.sources.outputs.ok == 'true'
-      run: |
-        nix build .#codex -L --show-trace
+      - name: Push to Cachix (macOS only)
+        if: github.ref == 'refs/heads/main' && matrix.os == 'macos-latest'
+        run: nix build .#codex --json | jq -r '.[].outputs.out' | cachix push caseymatt
 
-    - name: Push to Cachix
-      if: github.ref == 'refs/heads/main' && matrix.os == 'macos-latest' && steps.sources.outputs.ok == 'true'
-      run: |
-        nix build .#codex --json | jq -r '.[].outputs.out' | cachix push caseymatt
-
-    - name: Test codex
-      if: steps.sources.outputs.ok == 'true'
-      run: |
-        ./result/bin/codex --version || true
-
-    - name: Skip notice (sources not populated)
-      if: steps.sources.outputs.ok != 'true'
-      run: echo "Skipping build: sources.json not populated yet (run updater or merge its PR)."
+      - name: Smoke test
+        run: ./result/bin/codex --version || true
