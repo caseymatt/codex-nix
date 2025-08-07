@@ -38,6 +38,8 @@ if supported then stdenvNoCC.mkDerivation {
         cp "$src" "$work/codex" || true ;;
     esac
     cd "$work"
+    echo "Listing extracted files (top 200):"
+    find . -maxdepth 3 -type f | head -n 200 | sed 's/^/  /'
     # Locate the codex binary within the asset (supports codex and codex-exec)
     candidate=$(find . -maxdepth 3 -type f 2>/dev/null | grep -E '/codex(-exec)?$' | head -n1 || true)
     if [ -z "$candidate" ] && [ -f "./codex" ]; then
