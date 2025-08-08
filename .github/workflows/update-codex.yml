@@ -61,7 +61,11 @@ jobs:
             url=$(echo "$line" | jq -r .url)
             echo "Found $os_arch -> $name ($url)"
             # Prefetch sha256 via nix (json output)
-            sha=$(nix store prefetch-file --json "$url" | jq -r .hash)
+            sha=$(nix store prefetch-file --json "$url" | jq -r .hash || true)
+            if [ -z "$sha" ] || [ "$sha" = "null" ]; then
+              echo "Prefetch failed for $url; skipping $os_arch"
+              echo ""; return 0
+            fi
             jq -n --arg url "$url" --arg sha256 "$sha" '{url:$url, sha256:$sha256}'
           }
 
