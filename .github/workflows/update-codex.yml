@@ -60,10 +60,15 @@ jobs:
             name=$(echo "$line" | jq -r .name)
             url=$(echo "$line" | jq -r .url)
             echo "Found $os_arch -> $name ($url)"
-            # Prefetch sha256 via nix (json output)
-            sha=$(nix store prefetch-file --json "$url" | jq -r .hash || true)
-            if [ -z "$sha" ] || [ "$sha" = "null" ]; then
+            # Prefetch sha256 using nix-prefetch-url and convert to SRI
+            raw=$(nix-prefetch-url --type sha256 "$url" 2>/dev/null || true)
+            if [ -z "$raw" ]; then
               echo "Prefetch failed for $url; skipping $os_arch"
+              echo ""; return 0
+            fi
+            sha=$(nix hash to-sri --type sha256 "$raw" 2>/dev/null || true)
+            if [ -z "$sha" ]; then
+              echo "Failed to convert hash for $url; skipping $os_arch"
               echo ""; return 0
             fi
             jq -n --arg url "$url" --arg sha256 "$sha" '{url:$url, sha256:$sha256}'
