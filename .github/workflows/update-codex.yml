@@ -18,12 +18,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v26
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
-          extra_nix_config: |
-            experimental-features = nix-command flakes
+      # No Nix needed for hashing; use openssl to compute SRI
 
       - name: Fetch latest GitHub release metadata
         id: latest
@@ -60,16 +55,12 @@ jobs:
             name=$(echo "$line" | jq -r .name)
             url=$(echo "$line" | jq -r .url)
             echo "Found $os_arch -> $name ($url)"
-            # Download and compute SRI via nix (content hash)
-            tmp=$(mktemp)
-            curl -fsSL -o "$tmp" "$url" || { echo "Download failed for $url"; echo ""; return 0; }
-            sha=$(nix hash file --sri "$tmp" 2>/dev/null || true)
-            rm -f "$tmp"
-            if [ -z "$sha" ]; then
-              echo "Hashing failed for $url; skipping $os_arch"
-              echo ""; return 0
+            # Download and compute SRI via openssl
+            sri=$(curl -fsSL "$url" | openssl dgst -sha256 -binary | openssl base64 -A 2>/dev/null || true)
+            if [ -z "$sri" ]; then
+              echo "Hashing failed for $url; skipping $os_arch"; echo ""; return 0
             fi
-            jq -n --arg url "$url" --arg sha256 "$sha" '{url:$url, sha256:$sha256}'
+            jq -n --arg url "$url" --arg sha256 "sha256-$sri" '{url:$url, sha256:$sha256}'
           }
 
           # Match both orders: arch-OS and OS-arch
