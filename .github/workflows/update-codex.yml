@@ -70,10 +70,21 @@ jobs:
           }
 
           # Match specific asset names for each platform
+          echo "DEBUG: Assets variable contains:"
+          echo "$assets" | head -5
+          echo "DEBUG: Starting asset matching..."
+          
           x86_64_darwin=$(map_asset x86_64-darwin 'codex(-exec)?-x86_64-apple-darwin')
+          echo "DEBUG: x86_64_darwin result: '$x86_64_darwin'"
+          
           aarch64_darwin=$(map_asset aarch64-darwin 'codex(-exec)?-aarch64-apple-darwin') 
+          echo "DEBUG: aarch64_darwin result: '$aarch64_darwin'"
+          
           x86_64_linux=$(map_asset x86_64-linux 'codex(-exec)?-x86_64-unknown-linux-gnu')
+          echo "DEBUG: x86_64_linux result: '$x86_64_linux'"
+          
           aarch64_linux=$(map_asset aarch64-linux 'codex(-exec)?-aarch64-unknown-linux-gnu')
+          echo "DEBUG: aarch64_linux result: '$aarch64_linux'"
 
           jq -n \
             --arg version "$version" \
