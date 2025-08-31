@@ -46,21 +46,26 @@ jobs:
           map_asset() {
             local os_arch="$1" # nix system key
             local pattern="$2" # regex to match asset name
+            echo "DEBUG: Looking for $os_arch with pattern: $pattern"
             # Process each JSON object line by line, prefer .tar.gz or .zip assets
             while IFS= read -r line; do
-              if echo "$line" | jq -e --arg re "$pattern" 'select((.name|test($re)) and ((.name|endswith(".tar.gz")) or (.name|endswith(".zip"))))' > /dev/null 2>&1; then
-                name=$(echo "$line" | jq -r .name)
-                url=$(echo "$line" | jq -r .url)
-                echo "Found $os_arch -> $name ($url)"
-                # Download and compute SRI via openssl
-                sri=$(curl -fsSL "$url" | openssl dgst -sha256 -binary | openssl base64 -A 2>/dev/null || true)
-                if [ -z "$sri" ]; then
-                  echo "Hashing failed for $url; skipping $os_arch"; echo ""; return 0
+              if [ -n "$line" ]; then
+                name=$(echo "$line" | jq -r .name 2>/dev/null || echo "")
+                echo "DEBUG: Checking asset: $name"
+                if echo "$line" | jq -e --arg re "$pattern" 'select((.name|test($re)) and ((.name|endswith(".tar.gz")) or (.name|endswith(".zip"))))' > /dev/null 2>&1; then
+                  url=$(echo "$line" | jq -r .url)
+                  echo "Found $os_arch -> $name ($url)"
+                  # Download and compute SRI via openssl
+                  sri=$(curl -fsSL "$url" | openssl dgst -sha256 -binary | openssl base64 -A 2>/dev/null || true)
+                  if [ -z "$sri" ]; then
+                    echo "Hashing failed for $url; skipping $os_arch"; echo ""; return 0
+                  fi
+                  jq -n --arg url "$url" --arg sha256 "sha256-$sri" '{url:$url, sha256:$sha256}'
+                  return 0
                 fi
-                jq -n --arg url "$url" --arg sha256 "sha256-$sri" '{url:$url, sha256:$sha256}'
-                return 0
               fi
             done <<< "$assets"
+            echo "DEBUG: No matches found for $os_arch"
             echo ""
           }
 
